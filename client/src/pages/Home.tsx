@@ -12,7 +12,7 @@ import { Music2, RefreshCw, ChevronRight } from "lucide-react";
 import type { Session, EmotionalMode, OptionKey } from "@/lib/types";
 import { runPipeline, updateSelection } from "@/lib/pipeline";
 import UploadZone from "@/components/UploadZone";
-import MelodyGrid from "@/components/MelodyGrid";
+import PianoRoll from "@/components/PianoRoll";
 import PhraseCard from "@/components/PhraseCard";
 import KeyDisplay from "@/components/KeyDisplay";
 import ExportPanel from "@/components/ExportPanel";
@@ -265,7 +265,9 @@ export default function Home() {
                     Click a phrase region to focus
                   </span>
                 </div>
-                <MelodyGrid
+                <PianoRoll
+                  detectedKey={session.detectedKey!}
+                  onNotesChange={(updatedNotes) => setSession(prev => prev ? {...prev, melody: updatedNotes} : prev)}
                   notes={session.melody}
                   phrases={session.phrases}
                   totalBars={session.midiMeta?.totalBars ?? 16}

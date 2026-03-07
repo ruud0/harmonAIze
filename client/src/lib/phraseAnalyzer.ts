@@ -130,10 +130,10 @@ export function analyzePhrases(notes: CanonicalNote[], totalBars: number): Phras
   }
 
   // Merge very short phrases (< 2 bars) into adjacent ones
-  return mergeShorPhrases(phrases);
+  return mergeShortPhrases(phrases);
 }
 
-function mergeShorPhrases(phrases: Phrase[]): Phrase[] {
+function mergeShortPhrases(phrases: Phrase[]): Phrase[] {
   if (phrases.length <= 1) return phrases;
 
   const result: Phrase[] = [];
