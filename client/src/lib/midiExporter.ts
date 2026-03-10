@@ -7,16 +7,23 @@
  * Uses midi-writer-js for MIDI file construction.
  */
 
-import type { Session, ChordEvent, BassRhythm, EmotionalMode } from "./types";
+import type { Session, ChordEvent, EmotionalMode } from "./types";
 import { midiToFullName } from "./midiParser";
 
 // ─── Mode → GM instrument ─────────────────────────────────────────────────────
 
 const MODE_CHORD_INSTRUMENT: Record<EmotionalMode, number> = {
-  bright: 4,   // Electric Piano 1 (Rhodes)
-  dark:   48,  // String Ensemble 1
-  calm:   89,  // Pad 2 Warm
-  tense:  62,  // Brass Section
+  bright: 48, // String Ensemble 1
+  dark:   89, // Pad 2 Warm
+  calm:   52, // Choir Aahs
+  tense:  82, // Lead 3 Calliope
+};
+
+const MODE_BASS_INSTRUMENT: Record<EmotionalMode, number> = {
+  bright: 32, // Acoustic Bass
+  calm:   32, // Acoustic Bass
+  dark:   38, // Synth Bass 1
+  tense:  38, // Synth Bass 1
 };
 
 // ─── Duration Mapping ─────────────────────────────────────────────────────────
@@ -35,12 +42,11 @@ export async function exportMidi(session: Session): Promise<Blob> {
   const MidiWriter = await import("midi-writer-js");
   const Writer = MidiWriter.default ?? MidiWriter;
 
-  const bpm = session.midiMeta?.tempos[0]?.bpm ?? 120;
   const ticksPerBeat = 128;
 
   // ─── Track 1: Original Melody ───────────────────────────────────────────────
   const melodyTrack = new Writer.Track();
-  melodyTrack.addEvent(new Writer.ProgramChangeEvent({ instrument: 0 }));
+  melodyTrack.addEvent(new Writer.ProgramChangeEvent({ instrument: 0 })); // Acoustic Grand Piano
 
   for (const note of session.melody) {
     const startTick =
@@ -58,81 +64,118 @@ export async function exportMidi(session: Session): Promise<Blob> {
     );
   }
 
-  // ─── Tracks 2+: One chord track per emotional mode used ─────────────────────
+  // ─── Resolve phrases with mode info ─────────────────────────────────────────
   const phraseGroups = resolveChordsByPhrase(session);
-  const chordTracksByMode = new Map<EmotionalMode, typeof melodyTrack>();
 
-  for (const { mode, chords } of phraseGroups) {
-    if (!chordTracksByMode.has(mode)) {
-      const track = new Writer.Track();
-      track.addEvent(new Writer.ProgramChangeEvent({ instrument: MODE_CHORD_INSTRUMENT[mode] }));
-      chordTracksByMode.set(mode, track);
+  // Sort phrase groups by first chord's position
+  const sortedGroups = [...phraseGroups].sort((a, b) => {
+    const aFirst = a.chords[0];
+    const bFirst = b.chords[0];
+    if (!aFirst) return 1;
+    if (!bFirst) return -1;
+    return aFirst.bar !== bFirst.bar ? aFirst.bar - bFirst.bar : aFirst.beat - bFirst.beat;
+  });
+
+  // ─── Track 2: Single chord track with per-phrase program changes ─────────────
+  const chordTrack = new Writer.Track();
+  let lastChordMode: EmotionalMode | null = null;
+
+  for (const { phraseId, mode, chords } of sortedGroups) {
+    if (chords.length === 0) continue;
+
+    // Apply program change before first chord of phrase if mode changed
+    if (mode !== lastChordMode) {
+      chordTrack.addEvent(new Writer.ProgramChangeEvent({ instrument: MODE_CHORD_INSTRUMENT[mode] }));
+      lastChordMode = mode;
     }
-    const chordTrack = chordTracksByMode.get(mode)!;
-    for (const chord of chords) {
-      const startTick = ((chord.bar - 1) * 4 + (chord.beat - 1)) * ticksPerBeat;
+
+    chords.forEach((chord, chordIndex) => {
+      const override = session.timingOverrides?.[phraseId]?.[chordIndex];
+      const bar = override?.bar ?? chord.bar;
+      const beat = override?.beat ?? chord.beat;
+      const subdivision = override?.subdivision ?? 1;
+      const durationBeats = override?.durationBeats ?? (chord.durationBeats ?? 4);
+      const pitchOffsets = override?.pitchOffsets ?? [];
+      const voicing = chord.voicing.map((p, i) => p + (pitchOffsets[i] ?? 0));
+
+      const startTick =
+        ((bar - 1) * 4 + (beat - 1) + (subdivision - 1) * 0.25) * ticksPerBeat;
+
       chordTrack.addEvent(
         new Writer.NoteEvent({
-          pitch: chord.voicing.map(midiToFullName),
-          duration: beatsToMWJDuration(chord.durationBeats ?? 4),
+          pitch: voicing.map(midiToFullName),
+          duration: beatsToMWJDuration(durationBeats),
           velocity: 70,
           startTick: Math.round(startTick),
         })
       );
-    }
+    });
   }
 
-  // ─── Bass Track (all phrases combined) ──────────────────────────────────────
+  // ─── Track 3: Single bass track with per-phrase program changes ──────────────
   const bassTrack = new Writer.Track();
-  bassTrack.addEvent(new Writer.ProgramChangeEvent({ instrument: 32 })); // acoustic bass
+  let lastBassMode: EmotionalMode | null = null;
 
-  const allChordsForBass = phraseGroups
-    .flatMap((g) => g.chords)
-    .sort((a, b) => a.bar - b.bar || a.beat - b.beat);
+  for (const { phraseId, mode, chords } of sortedGroups) {
+    if (chords.length === 0) continue;
 
-  for (const chord of allChordsForBass) {
-    const startTick = ((chord.bar - 1) * 4 + (chord.beat - 1)) * ticksPerBeat;
-
-    if (chord.bassRhythm === "root_sustained") {
-      bassTrack.addEvent(
-        new Writer.NoteEvent({
-          pitch: [midiToFullName(chord.bassNote)],
-          duration: beatsToMWJDuration(chord.durationBeats ?? 4),
-          velocity: 80,
-          startTick: Math.round(startTick),
-        })
-      );
-    } else if (chord.bassRhythm === "root_beat1_fifth_beat3" && chord.beat === 1) {
-      bassTrack.addEvent(
-        new Writer.NoteEvent({
-          pitch: [midiToFullName(chord.bassNote)],
-          duration: "2",
-          velocity: 80,
-          startTick: Math.round(startTick),
-        })
-      );
-      bassTrack.addEvent(
-        new Writer.NoteEvent({
-          pitch: [midiToFullName(chord.bassNote + 7)],
-          duration: "2",
-          velocity: 70,
-          startTick: Math.round(startTick + ticksPerBeat * 2),
-        })
-      );
-    } else {
-      bassTrack.addEvent(
-        new Writer.NoteEvent({
-          pitch: [midiToFullName(chord.bassNote)],
-          duration: beatsToMWJDuration(chord.durationBeats ?? 2),
-          velocity: chord.bassRhythm === "passing_tone" ? 75 : 80,
-          startTick: Math.round(startTick),
-        })
-      );
+    // Apply program change before first bass note of phrase if mode changed
+    if (mode !== lastBassMode) {
+      bassTrack.addEvent(new Writer.ProgramChangeEvent({ instrument: MODE_BASS_INSTRUMENT[mode] }));
+      lastBassMode = mode;
     }
+
+    chords.forEach((chord, chordIndex) => {
+      const override = session.timingOverrides?.[phraseId]?.[chordIndex];
+      const bar = override?.bar ?? chord.bar;
+      const beat = override?.beat ?? chord.beat;
+      const subdivision = override?.subdivision ?? 1;
+      const durationBeats = override?.durationBeats ?? (chord.durationBeats ?? 4);
+
+      const startTick =
+        ((bar - 1) * 4 + (beat - 1) + (subdivision - 1) * 0.25) * ticksPerBeat;
+
+      if (chord.bassRhythm === "root_sustained") {
+        bassTrack.addEvent(
+          new Writer.NoteEvent({
+            pitch: [midiToFullName(chord.bassNote)],
+            duration: beatsToMWJDuration(durationBeats),
+            velocity: 80,
+            startTick: Math.round(startTick),
+          })
+        );
+      } else if (chord.bassRhythm === "root_beat1_fifth_beat3" && beat === 1) {
+        bassTrack.addEvent(
+          new Writer.NoteEvent({
+            pitch: [midiToFullName(chord.bassNote)],
+            duration: "2",
+            velocity: 80,
+            startTick: Math.round(startTick),
+          })
+        );
+        bassTrack.addEvent(
+          new Writer.NoteEvent({
+            pitch: [midiToFullName(chord.bassNote + 7)],
+            duration: "2",
+            velocity: 70,
+            startTick: Math.round(startTick + 128 * 2),
+          })
+        );
+      } else {
+        bassTrack.addEvent(
+          new Writer.NoteEvent({
+            pitch: [midiToFullName(chord.bassNote)],
+            duration: beatsToMWJDuration(durationBeats),
+            velocity: chord.bassRhythm === "passing_tone" ? 75 : 80,
+            startTick: Math.round(startTick),
+          })
+        );
+      }
+    });
   }
 
   // ─── Write MIDI File ────────────────────────────────────────────────────────
-  const allTracks = [melodyTrack, ...Array.from(chordTracksByMode.values()), bassTrack];
+  const allTracks = [melodyTrack, chordTrack, bassTrack];
   const write = new Writer.Writer(allTracks);
   const dataUri = write.dataUri();
 
@@ -151,7 +194,7 @@ export async function exportMidi(session: Session): Promise<Blob> {
 
 function resolveChordsByPhrase(
   session: Session
-): Array<{ mode: EmotionalMode; chords: ChordEvent[] }> {
+): Array<{ phraseId: string; mode: EmotionalMode; chords: ChordEvent[] }> {
   return session.phrases
     .map((phrase) => {
       const selection = session.selectedOptions[phrase.phraseId];
@@ -160,7 +203,7 @@ function resolveChordsByPhrase(
       const phraseHarmony = session.harmonicOutput[mode].find(
         (h) => h.phraseId === phrase.phraseId
       );
-      return { mode, chords: phraseHarmony?.options[option].chords ?? [] };
+      return { phraseId: phrase.phraseId, mode, chords: phraseHarmony?.options[option].chords ?? [] };
     })
     .filter(({ chords }) => chords.length > 0);
 }

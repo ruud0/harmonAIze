@@ -12,6 +12,7 @@ import { midiToFullName } from "./midiParser";
 
 let synth: Tone.PolySynth | null = null;
 let bassSynth: Tone.Synth | null = null;
+let melodySynth: Tone.PolySynth | null = null;
 let isPlaying = false;
 
 // ─── Mode-specific synth profiles ─────────────────────────────────────────────
@@ -70,6 +71,13 @@ function ensureSynths() {
     bassSynth = new Tone.Synth({
       oscillator: { type: "sine" },
       envelope: { attack: 0.05, decay: 0.2, sustain: 0.7, release: 0.5 },
+      volume: -6,
+    }).toDestination();
+  }
+  if (!melodySynth) {
+    melodySynth = new Tone.PolySynth(Tone.Synth, {
+      oscillator: { type: "triangle" },
+      envelope: { attack: 0.02, decay: 0.1, sustain: 0.8, release: 0.5 },
       volume: -6,
     }).toDestination();
   }
@@ -166,7 +174,21 @@ export async function playSingleChord(
 }
 
 export function stopPlayback(): void {
-  if (synth) synth.releaseAll();
+  if (synth) {
+    synth.releaseAll();
+    synth.dispose();
+    synth = null;
+  }
+  if (bassSynth) {
+    bassSynth.triggerRelease(Tone.now());
+    bassSynth.dispose();
+    bassSynth = null;
+  }
+  if (melodySynth) {
+    melodySynth.releaseAll();
+    melodySynth.dispose();
+    melodySynth = null;
+  }
   isPlaying = false;
 }
 

@@ -17,12 +17,14 @@ import PhraseCard from "@/components/PhraseCard";
 import KeyDisplay from "@/components/KeyDisplay";
 import ExportPanel from "@/components/ExportPanel";
 import ProcessingStatus from "@/components/ProcessingStatus";
+import PianoRollEditor from "@/components/PianoRollEditor";
 
 export default function Home() {
   const [session, setSession] = useState<Session | null>(null);
   const [pipelineStage, setPipelineStage] = useState<Session["pipelineStage"]>("idle");
   const [stageMessage, setStageMessage] = useState("");
   const [selectedPhraseId, setSelectedPhraseId] = useState<string | null>(null);
+  const [showPianoRollEditor, setShowPianoRollEditor] = useState(false);
 
   const handleFile = useCallback(async (file: File) => {
     setSession(null);
@@ -335,7 +337,35 @@ export default function Home() {
                     );
                   })}
                 </div>
+
+                {/* Edit Timings button */}
+                <div className="mt-4 flex justify-center">
+                  <button
+                    className="flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-mono transition-all"
+                    style={{
+                      background: showPianoRollEditor
+                        ? "rgba(34,211,238,0.15)"
+                        : "rgba(255,255,255,0.06)",
+                      color: showPianoRollEditor ? "#22D3EE" : "rgba(255,255,255,0.5)",
+                      border: `1px solid ${showPianoRollEditor ? "rgba(34,211,238,0.3)" : "rgba(255,255,255,0.1)"}`,
+                    }}
+                    onClick={() => setShowPianoRollEditor((v) => !v)}
+                  >
+                    {showPianoRollEditor ? "▲ Hide Timing Editor" : "▼ Edit Timings"}
+                  </button>
+                </div>
               </div>
+
+              {/* Piano Roll Editor panel */}
+              {showPianoRollEditor && (
+                <div className="px-6 pb-6">
+                  <PianoRollEditor
+                    session={session}
+                    onSessionUpdate={(updated) => setSession(updated)}
+                    onClose={() => setShowPianoRollEditor(false)}
+                  />
+                </div>
+              )}
             </div>
           )}
         </main>

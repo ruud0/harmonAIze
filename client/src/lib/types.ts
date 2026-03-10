@@ -134,6 +134,14 @@ export type PipelineStage =
   | "exporting"
   | "error";
 
+export interface TimingOverride {
+  bar: number;
+  beat: number;
+  subdivision: number;
+  durationBeats: number;
+  pitchOffsets: number[];
+}
+
 export interface Session {
   sessionId: string;
   createdAt: string;
@@ -150,6 +158,11 @@ export interface Session {
     tense: PhraseHarmony[];
   };
   selectedOptions: Record<string, SelectedOption>; // keyed by phraseId
+  timingOverrides: {
+    [phraseId: string]: {
+      [chordIndex: number]: TimingOverride;
+    };
+  };
   exportReady: boolean;
   // Raw MIDI metadata (not persisted after parsing, kept for display)
   midiMeta: {
@@ -172,6 +185,7 @@ export function createEmptySession(filename: string): Session {
     phrases: [],
     harmonicOutput: { bright: [], dark: [], calm: [], tense: [] },
     selectedOptions: {},
+    timingOverrides: {},
     exportReady: false,
     midiMeta: null,
   };
