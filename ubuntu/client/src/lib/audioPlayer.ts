@@ -3,29 +3,37 @@
  * Design: Spectral / Frequency-Space Minimalism
  *
  * Plays chord progressions for auditioning using Tone.js PolySynth.
- * Keeps it simple: no full DAW, just quick chord previews.
+ * Three distinct timbres: melodySynth, chordSynth, bassSynth.
  */
 
 import * as Tone from "tone";
 import type { ChordEvent } from "./types";
 import { midiToFullName } from "./midiParser";
 
-let synth: Tone.PolySynth | null = null;
+let melodySynth: Tone.PolySynth | null = null;
+let chordSynth: Tone.PolySynth | null = null;
 let bassSynth: Tone.Synth | null = null;
 let isPlaying = false;
 
 function ensureSynths() {
-  if (!synth) {
-    synth = new Tone.PolySynth(Tone.Synth, {
+  if (!melodySynth) {
+    melodySynth = new Tone.PolySynth(Tone.Synth, {
       oscillator: { type: "triangle" },
-      envelope: { attack: 0.05, decay: 0.1, sustain: 0.6, release: 0.8 },
-      volume: -8,
+      envelope: { attack: 0.02, decay: 0.1, sustain: 0.8, release: 0.5 },
+      volume: -6,
+    }).toDestination();
+  }
+  if (!chordSynth) {
+    chordSynth = new Tone.PolySynth(Tone.Synth, {
+      oscillator: { type: "sine" },
+      envelope: { attack: 0.3, decay: 0.2, sustain: 0.7, release: 1.5 },
+      volume: -10,
     }).toDestination();
   }
   if (!bassSynth) {
     bassSynth = new Tone.Synth({
       oscillator: { type: "sine" },
-      envelope: { attack: 0.05, decay: 0.2, sustain: 0.7, release: 0.5 },
+      envelope: { attack: 0.05, decay: 0.3, sustain: 0.6, release: 0.8 },
       volume: -6,
     }).toDestination();
   }
@@ -55,7 +63,7 @@ export async function playChordProgression(
     const duration = barDuration * 0.95; // slight gap between chords
 
     // Schedule chord
-    synth!.triggerAttackRelease(chordNotes, duration, time);
+    chordSynth!.triggerAttackRelease(chordNotes, duration, time);
 
     // Schedule bass
     if (chord.bassRhythm === "root_beat1_fifth_beat3") {
@@ -95,7 +103,7 @@ export async function playSingleChord(
   ensureSynths();
 
   const chordNotes = chord.voicing.map(midiToFullName);
-  synth!.triggerAttackRelease(chordNotes, durationSec, Tone.now() + 0.05);
+  chordSynth!.triggerAttackRelease(chordNotes, durationSec, Tone.now() + 0.05);
   bassSynth!.triggerAttackRelease(
     midiToFullName(chord.bassNote),
     durationSec,
@@ -104,7 +112,9 @@ export async function playSingleChord(
 }
 
 export function stopPlayback(): void {
-  if (synth) synth.releaseAll();
+  if (melodySynth) { melodySynth.dispose(); melodySynth = null; }
+  if (chordSynth) { chordSynth.releaseAll(); chordSynth.dispose(); chordSynth = null; }
+  if (bassSynth) { bassSynth.dispose(); bassSynth = null; }
   isPlaying = false;
 }
 

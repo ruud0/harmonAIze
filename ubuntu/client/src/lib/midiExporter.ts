@@ -5,14 +5,30 @@
  * Export is read-only. Resolves selected_options → full chord data → output MIDI.
  * Constructs: chord track, bass track, merged with original melody track.
  * Uses midi-writer-js for MIDI file construction.
+ * Respects timingOverrides and per-mode GM program numbers.
  */
 
-import type { Session, ChordEvent, BassRhythm } from "./types";
+import type { Session, ChordEvent, EmotionalMode } from "./types";
 import { midiToFullName } from "./midiParser";
+
+// ─── GM Program Numbers per Mode ──────────────────────────────────────────────
+
+const CHORD_PROGRAMS: Record<EmotionalMode, number> = {
+  bright: 48, // String Ensemble 1
+  dark: 89,   // Pad 2 (warm)
+  calm: 52,   // Choir Aahs
+  tense: 82,  // Synth Lead (calliope)
+};
+
+const BASS_PROGRAMS: Record<EmotionalMode, number> = {
+  bright: 32, // Acoustic Bass
+  calm: 32,   // Acoustic Bass
+  dark: 38,   // Synth Bass 1
+  tense: 38,  // Synth Bass 1
+};
 
 // ─── Duration Mapping ─────────────────────────────────────────────────────────
 
-// midi-writer-js duration strings
 const BEAT_TO_DURATION: Record<number, string> = {
   4: "1",   // whole note
   2: "2",   // half note
@@ -23,6 +39,15 @@ const BEAT_TO_DURATION: Record<number, string> = {
 function beatsToMWJDuration(beats: number): string {
   const rounded = Math.round(beats * 2) / 2;
   return BEAT_TO_DURATION[rounded] ?? "4";
+}
+
+// ─── Resolved Chord Entry (includes phrase/mode metadata) ────────────────────
+
+interface ResolvedChordEntry {
+  chord: ChordEvent;
+  phraseId: string;
+  chordIndex: number;
+  mode: EmotionalMode;
 }
 
 // ─── MIDI Export ──────────────────────────────────────────────────────────────
@@ -57,17 +82,36 @@ export async function exportMidi(session: Session): Promise<Blob> {
 
   // ─── Track 2: Chord Track ───────────────────────────────────────────────────
   const chordTrack = new Writer.Track();
-  chordTrack.addEvent(new Writer.ProgramChangeEvent({ instrument: 48 })); // strings
+  const resolvedEntries = resolveSelectedChordsWithMode(session);
 
-  const resolvedChords = resolveSelectedChords(session);
-  for (const chord of resolvedChords) {
-    const startTick = ((chord.bar - 1) * 4 + (chord.beat - 1)) * ticksPerBeat;
-    const pitchNames = chord.voicing.map(midiToFullName);
+  let currentChordMode: EmotionalMode | null = null;
+  for (const { chord, phraseId, chordIndex, mode } of resolvedEntries) {
+    // Emit program change when mode changes
+    if (mode !== currentChordMode) {
+      chordTrack.addEvent(
+        new Writer.ProgramChangeEvent({ instrument: CHORD_PROGRAMS[mode] })
+      );
+      currentChordMode = mode;
+    }
+
+    // Apply timing overrides (never mutate session)
+    const override = session.timingOverrides?.[phraseId]?.[chordIndex];
+    const bar = override?.bar ?? chord.bar;
+    const beat = override?.beat ?? chord.beat;
+    const subdivision = override?.subdivision ?? 1;
+    const durationBeats = override?.durationBeats ?? 2;
+    const pitchOffsets = override?.pitchOffsets ?? [];
+
+    const startTick =
+      ((bar - 1) * 4 + (beat - 1) + (subdivision - 1) * 0.25) * ticksPerBeat;
+
+    const voicing = chord.voicing.map((p, i) => p + (pitchOffsets[i + 1] ?? 0));
+    const pitchNames = voicing.map(midiToFullName);
 
     chordTrack.addEvent(
       new Writer.NoteEvent({
         pitch: pitchNames,
-        duration: "2", // half note per chord
+        duration: beatsToMWJDuration(durationBeats),
         velocity: 70,
         startTick: Math.round(startTick),
       })
@@ -76,46 +120,63 @@ export async function exportMidi(session: Session): Promise<Blob> {
 
   // ─── Track 3: Bass Track ────────────────────────────────────────────────────
   const bassTrack = new Writer.Track();
-  bassTrack.addEvent(new Writer.ProgramChangeEvent({ instrument: 32 })); // acoustic bass
 
-  for (const chord of resolvedChords) {
-    const startTick = ((chord.bar - 1) * 4 + (chord.beat - 1)) * ticksPerBeat;
+  let currentBassMode: EmotionalMode | null = null;
+  for (const { chord, phraseId, chordIndex, mode } of resolvedEntries) {
+    // Emit program change when mode changes
+    if (mode !== currentBassMode) {
+      bassTrack.addEvent(
+        new Writer.ProgramChangeEvent({ instrument: BASS_PROGRAMS[mode] })
+      );
+      currentBassMode = mode;
+    }
+
+    const override = session.timingOverrides?.[phraseId]?.[chordIndex];
+    const bar = override?.bar ?? chord.bar;
+    const beat = override?.beat ?? chord.beat;
+    const subdivision = override?.subdivision ?? 1;
+    const durationBeats = override?.durationBeats ?? 2;
+    const pitchOffsets = override?.pitchOffsets ?? [];
+
+    const startTick =
+      ((bar - 1) * 4 + (beat - 1) + (subdivision - 1) * 0.25) * ticksPerBeat;
+
+    const bassNote = chord.bassNote + (pitchOffsets[0] ?? 0);
 
     if (chord.bassRhythm === "root_sustained") {
       bassTrack.addEvent(
         new Writer.NoteEvent({
-          pitch: [midiToFullName(chord.bassNote)],
-          duration: "1",
+          pitch: [midiToFullName(bassNote)],
+          duration: beatsToMWJDuration(durationBeats),
           velocity: 80,
           startTick: Math.round(startTick),
         })
       );
     } else if (chord.bassRhythm === "root_beat1_fifth_beat3") {
-      // Root on beat 1
+      const beatDurationTicks = ticksPerBeat;
       bassTrack.addEvent(
         new Writer.NoteEvent({
-          pitch: [midiToFullName(chord.bassNote)],
+          pitch: [midiToFullName(bassNote)],
           duration: "2",
           velocity: 80,
           startTick: Math.round(startTick),
         })
       );
-      // Fifth on beat 3
-      const fifthNote = chord.bassNote + 7;
+      const fifthNote = bassNote + 7;
       bassTrack.addEvent(
         new Writer.NoteEvent({
           pitch: [midiToFullName(fifthNote)],
           duration: "2",
           velocity: 70,
-          startTick: Math.round(startTick + ticksPerBeat * 2),
+          startTick: Math.round(startTick + beatDurationTicks * 2),
         })
       );
     } else {
       // Passing tone
       bassTrack.addEvent(
         new Writer.NoteEvent({
-          pitch: [midiToFullName(chord.bassNote)],
-          duration: "1",
+          pitch: [midiToFullName(bassNote)],
+          duration: beatsToMWJDuration(durationBeats),
           velocity: 75,
           startTick: Math.round(startTick),
         })
@@ -138,33 +199,31 @@ export async function exportMidi(session: Session): Promise<Blob> {
   return new Blob([bytes], { type: "audio/midi" });
 }
 
-// ─── Resolve Selections ───────────────────────────────────────────────────────
+// ─── Resolve Selections with Mode ─────────────────────────────────────────────
 
-function resolveSelectedChords(session: Session): ChordEvent[] {
-  const allChords: ChordEvent[] = [];
+function resolveSelectedChordsWithMode(session: Session): ResolvedChordEntry[] {
+  const result: ResolvedChordEntry[] = [];
 
   for (const phrase of session.phrases) {
     const selection = session.selectedOptions[phrase.phraseId];
-    if (!selection) {
-      // Default to bright mode, option A
-      const harmony = session.harmonicOutput.bright.find(
-        (h) => h.phraseId === phrase.phraseId
-      );
-      if (harmony) allChords.push(...harmony.options.A.chords);
-      continue;
-    }
+    const mode: EmotionalMode = selection?.mode ?? "bright";
+    const optionKey = selection?.option ?? "A";
 
-    const modeOutput = session.harmonicOutput[selection.mode];
+    const modeOutput = session.harmonicOutput[mode];
     const phraseHarmony = modeOutput.find(
       (h) => h.phraseId === phrase.phraseId
     );
-    if (phraseHarmony) {
-      allChords.push(...phraseHarmony.options[selection.option].chords);
-    }
+    if (!phraseHarmony) continue;
+
+    const chords = phraseHarmony.options[optionKey].chords;
+    chords.forEach((chord, chordIndex) => {
+      result.push({ chord, phraseId: phrase.phraseId, chordIndex, mode });
+    });
   }
 
-  // Sort by bar then beat
-  return allChords.sort((a, b) => a.bar - b.bar || a.beat - b.beat);
+  return result.sort(
+    (a, b) => a.chord.bar - b.chord.bar || a.chord.beat - b.chord.beat
+  );
 }
 
 // ─── Session Serialization ────────────────────────────────────────────────────

@@ -17,16 +17,20 @@ import PhraseCard from "@/components/PhraseCard";
 import KeyDisplay from "@/components/KeyDisplay";
 import ExportPanel from "@/components/ExportPanel";
 import ProcessingStatus from "@/components/ProcessingStatus";
+import PianoRollEditor from "@/components/PianoRollEditor";
 
 export default function Home() {
   const [session, setSession] = useState<Session | null>(null);
   const [pipelineStage, setPipelineStage] = useState<Session["pipelineStage"]>("idle");
   const [stageMessage, setStageMessage] = useState("");
   const [selectedPhraseId, setSelectedPhraseId] = useState<string | null>(null);
+  const [showChordNames, setShowChordNames] = useState(true);
+  const [showPianoRoll, setShowPianoRoll] = useState(false);
 
   const handleFile = useCallback(async (file: File) => {
     setSession(null);
     setSelectedPhraseId(null);
+    setShowPianoRoll(false);
 
     try {
       const result = await runPipeline(file, (stage, message) => {
@@ -65,6 +69,10 @@ export default function Home() {
       setSelectedPhraseId(loaded.phrases[0].phraseId);
     }
     toast.success("Session loaded.");
+  }, []);
+
+  const handleSessionUpdate = useCallback((updated: Session) => {
+    setSession(updated);
   }, []);
 
   const isProcessing =
@@ -108,6 +116,7 @@ export default function Home() {
               setSession(null);
               setPipelineStage("idle");
               setSelectedPhraseId(null);
+              setShowPianoRoll(false);
             }}
           >
             <RefreshCw size={12} />
@@ -279,17 +288,58 @@ export default function Home() {
                 />
               </div>
 
-              {/* Phrase cards */}
-              <div className="p-6">
-                <div className="flex items-center justify-between mb-4">
-                  <h2 className="text-xs font-mono text-white/30 uppercase tracking-widest">
-                    Harmonic Options — {session.phrases.length} phrases
-                  </h2>
+              {/* Phrase cards header with controls */}
+              <div className="px-6 pt-4 pb-2 flex items-center justify-between">
+                <h2 className="text-xs font-mono text-white/30 uppercase tracking-widest">
+                  Harmonic Options — {session.phrases.length} phrases
+                </h2>
+                <div className="flex items-center gap-3">
+                  {/* Chord name toggle */}
+                  <button
+                    onClick={() => setShowChordNames(v => !v)}
+                    className="text-xs font-mono px-3 py-1 rounded transition-all duration-150"
+                    style={{
+                      background: showChordNames ? "rgba(34,211,238,0.15)" : "rgba(255,255,255,0.06)",
+                      color: showChordNames ? "#22D3EE" : "rgba(255,255,255,0.4)",
+                      border: `1px solid ${showChordNames ? "rgba(34,211,238,0.3)" : "rgba(255,255,255,0.1)"}`,
+                    }}
+                  >
+                    {showChordNames ? "Chord" : "Roman"}
+                  </button>
+
+                  {/* Edit Timings button */}
+                  <button
+                    onClick={() => setShowPianoRoll(v => !v)}
+                    className="text-xs font-mono px-3 py-1 rounded transition-all duration-150"
+                    style={{
+                      background: showPianoRoll ? "rgba(163,230,53,0.15)" : "rgba(255,255,255,0.06)",
+                      color: showPianoRoll ? "#a3e635" : "rgba(255,255,255,0.4)",
+                      border: `1px solid ${showPianoRoll ? "rgba(163,230,53,0.3)" : "rgba(255,255,255,0.1)"}`,
+                    }}
+                  >
+                    {showPianoRoll ? "Hide Piano Roll" : "Edit Timings"}
+                  </button>
+
                   <span className="text-xs font-mono text-white/20">
                     Select mode + option per phrase, then export
                   </span>
                 </div>
+              </div>
 
+              {/* Piano Roll Editor */}
+              {showPianoRoll && (
+                <div className="px-6 pb-4">
+                  <PianoRollEditor
+                    session={session}
+                    onSessionUpdate={handleSessionUpdate}
+                    selectedOptions={session.selectedOptions}
+                    onClose={() => setShowPianoRoll(false)}
+                  />
+                </div>
+              )}
+
+              {/* Phrase cards */}
+              <div className="px-6 pb-6">
                 <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
                   {session.phrases.map((phrase) => {
                     const harmony = {
@@ -326,6 +376,7 @@ export default function Home() {
                           currentSelection={sel}
                           isSelected={selectedPhraseId === phrase.phraseId}
                           bpm={bpm}
+                          showChordNames={showChordNames}
                           onSelectionChange={handleSelectionChange}
                           onClick={() => setSelectedPhraseId(phrase.phraseId)}
                         />

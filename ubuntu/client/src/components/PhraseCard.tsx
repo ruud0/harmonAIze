@@ -11,11 +11,11 @@ import type {
   PhraseHarmony,
   EmotionalMode,
   OptionKey,
-  Session,
+  ChordEvent,
 } from "@/lib/types";
 import { MODE_COLORS, MODE_LABELS } from "@/lib/types";
+import type { ChordQuality } from "@/lib/types";
 import { playChordProgression, stopPlayback } from "@/lib/audioPlayer";
-import { updateSelection } from "@/lib/pipeline";
 
 interface PhraseCardProps {
   phrase: Phrase;
@@ -28,6 +28,7 @@ interface PhraseCardProps {
   currentSelection: { mode: EmotionalMode; option: OptionKey };
   isSelected: boolean;
   bpm: number;
+  showChordNames: boolean; // true = "Fm7", false = "im7"
   onSelectionChange: (phraseId: string, mode: EmotionalMode, option: OptionKey) => void;
   onClick: () => void;
 }
@@ -42,12 +43,42 @@ const MODE_ICONS: Record<EmotionalMode, React.ReactNode> = {
 const MODES: EmotionalMode[] = ["bright", "dark", "calm", "tense"];
 const OPTIONS: OptionKey[] = ["A", "B", "C"];
 
+function qualityToSuffix(q: ChordQuality): string {
+  switch (q) {
+    case "major": return "";
+    case "minor": return "m";
+    case "diminished": return "°";
+    case "augmented": return "+";
+    case "dominant7": return "7";
+    case "major7": return "maj7";
+    case "minor7": return "m7";
+    case "halfDim7": return "ø7";
+    case "dim7": return "°7";
+    case "sus2": return "sus2";
+    case "sus4": return "sus4";
+    case "add9": return "add9";
+    case "major9": return "maj9";
+    case "minor9": return "m9";
+    default: return "";
+  }
+}
+
+function formatChordLabel(chord: ChordEvent, showChordNames: boolean): string {
+  if (showChordNames) {
+    return chord.root + qualityToSuffix(chord.quality);
+  }
+  // Roman numeral + quality suffix
+  const suffix = qualityToSuffix(chord.quality);
+  return chord.degreeLabel + suffix;
+}
+
 export default function PhraseCard({
   phrase,
   harmonyByMode,
   currentSelection,
   isSelected,
   bpm,
+  showChordNames,
   onSelectionChange,
   onClick,
 }: PhraseCardProps) {
@@ -240,22 +271,7 @@ export default function PhraseCard({
                         transition: "all 150ms ease",
                       }}
                     >
-                      {chord.degreeLabel}
-                      {chord.quality === "dominant7"
-                        ? "7"
-                        : chord.quality === "minor7"
-                        ? "m7"
-                        : chord.quality === "major7"
-                        ? "maj7"
-                        : chord.quality === "minor"
-                        ? "m"
-                        : chord.quality === "diminished"
-                        ? "°"
-                        : chord.quality === "halfDim7"
-                        ? "ø7"
-                        : chord.quality === "add9"
-                        ? "add9"
-                        : ""}
+                      {formatChordLabel(chord, showChordNames)}
                     </span>
                   ))}
                 </div>
