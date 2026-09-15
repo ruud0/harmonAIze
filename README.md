@@ -81,6 +81,9 @@ server/index.ts                    /api/generate, Claude call, local fallback
 
 Working: generation, playback, piano-roll display, and both export paths.
 
-Not built yet: the MIDI-upload path — importing an existing melody and
-harmonising it, rather than generating from parameters. Scaffolding for it
-exists in the component tree but is not wired to the app.
+Built but not wired up: a full MIDI-upload harmonisation path. `client/src/lib/`
+holds a MIDI parser, a key detector, a phrase segmenter, a chord engine, and a
+voice-leading module (~1,600 lines), with the UI for it — upload zone, phrase
+cards, a second piano-roll editor — in `client/src/components/` (~2,600 lines).
+The current Home page uses the parameter-driven generator instead, so none of
+that pipeline is reachable from the running app.

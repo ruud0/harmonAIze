@@ -116,7 +116,7 @@ Rules: bar 0 to ${bars - 1}, beat 0.0 to 3.75 (in 0.25 increments), duration in 
       } else {
         try {
           const message = await anthropic.messages.create({
-            model: "claude-sonnet-4-20250514",
+            model: "claude-opus-5",
             max_tokens: 2048,
             messages: [{ role: "user", content: prompt }],
           });
