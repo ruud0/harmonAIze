@@ -1,0 +1,63 @@
+# Builds the client and publishes it to GitHub Pages as a static demo.
+# No server is deployed: lib/generateLoop.ts falls back to the local
+# music-theory generator when /api/generate is unreachable.
+name: Deploy demo to Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # Reported, not enforced — the repo carries an unwired harmonization
+      # pipeline that does not typecheck clean yet.
+      - name: Typecheck
+        continue-on-error: true
+        run: pnpm exec tsc --noEmit
+
+      - name: Build client
+        env:
+          VITE_BASE: /harmonAIze/
+        run: pnpm exec vite build
+
+      # Pages serves 404.html for unknown paths; pointing it at the SPA entry
+      # keeps a deep link or a refresh from landing on GitHub's 404.
+      - name: Add SPA 404 fallback
+        run: cp dist/public/index.html dist/public/404.html
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist/public
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

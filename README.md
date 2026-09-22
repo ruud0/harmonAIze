@@ -3,7 +3,12 @@
 Generate a musical loop in a chosen key and mood, edit it in a DAW-style piano
 roll, and export it as MIDI stems your DAW can open.
 
-![demo](docs/demo.gif)
+### ▶ [Open the live demo](https://ruud0.github.io/harmonAIze/)
+
+Runs entirely in the browser — no install, no sign-in, no API key. Pick a key
+and mood, hit generate, edit the notes in the piano roll, and export a real
+`.mid` file. The hosted build has no server behind it, so generation uses the
+local music-theory generator described below.
 
 ## What it does
 
@@ -18,10 +23,13 @@ in the browser and then take into a real project.
 - **Two export paths.** A single multi-track `.mid`, or a `.zip` containing
   `melody.mid`, `chords.mid`, and `bass.mid` as separate files, so each layer
   lands on its own DAW track.
-- **Works without an API key.** With `ANTHROPIC_API_KEY` set, generation goes
-  through Claude. Without it, the server falls back to a local music-theory
-  generator that builds a diatonic progression with triad voicings, a bass
-  pulse, and a scale-tone melodic figure. Same response shape, no network call.
+- **Works without an API key, or without a server at all.** With
+  `ANTHROPIC_API_KEY` set, generation goes through Claude. Without it, the same
+  local music-theory generator runs instead — a diatonic progression with triad
+  voicings, a bass pulse, and a scale-tone melodic figure over nine scale modes.
+  It lives in `client/src/lib/localGenerator.ts` and runs client-side, so the
+  static build above needs no backend; `lib/generateLoop.ts` tries the API first
+  and falls back to it.
 
 ## Why I built it
 
@@ -65,7 +73,9 @@ pnpm build            # vite build + esbuild bundle of the server
 pnpm start            # serves the built client from the Express server
 ```
 
-Requires a Node process at runtime; it is not a static site.
+That path requires a Node process at runtime. The client can also be built
+standalone — `VITE_BASE=/harmonAIze/ pnpm exec vite build` — which is what the
+Pages workflow deploys: same app, local generator only, no backend.
 
 ## Layout
 

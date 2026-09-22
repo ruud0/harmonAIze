@@ -12,10 +12,10 @@ import DAWPianoRoll from '@/components/DAWPianoRoll';
 import {
   type GeneratedLoop,
   type HarmNote,
-  type RawApiNote,
   rawNotesToHarmNotes,
   PPQ,
 } from '@/lib/harmonaizeTypes';
+import { generateLoop } from '@/lib/generateLoop';
 import {
   downloadBlob,
   exportMultiTrackMidi,
@@ -137,20 +137,14 @@ export default function Home() {
     setGenerating(true);
     setStatusText('Generating...');
     try {
-      const res = await fetch('/api/generate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ key, scale, bars: loopBars, mood, bpm }),
-      });
-      const json = await res.json();
-      if (!json.ok) throw new Error(json.error ?? 'Unknown error');
-      const raw = json.data as { chords: string[]; notes: RawApiNote[] };
+      const raw = await generateLoop({ key, scale, bars: loopBars, mood, bpm });
       const harmNotes = rawNotesToHarmNotes(raw.notes);
       const newLoop: GeneratedLoop = { key, scale, bars: loopBars, bpm, mood, chords: raw.chords, notes: harmNotes };
       setLoop(newLoop);
       setNotes(harmNotes);
       setOrigNotes(harmNotes);
-      setStatusText(`${key} ${scale} · ${loopBars} bars · ${bpm} BPM · ${mood}`);
+      const suffix = raw.source === 'local' ? ' · local generator' : '';
+      setStatusText(`${key} ${scale} · ${loopBars} bars · ${bpm} BPM · ${mood}${suffix}`);
     } catch (err: unknown) {
       setStatusText(`Error: ${err instanceof Error ? err.message : String(err)}`);
     } finally {

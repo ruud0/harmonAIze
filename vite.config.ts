@@ -153,6 +153,9 @@ function vitePluginManusDebugCollector(): Plugin {
 const plugins = [react(), tailwindcss(), jsxLocPlugin(), vitePluginManusRuntime(), vitePluginManusDebugCollector()];
 
 export default defineConfig({
+  // "/" for local dev and self-hosted builds; the Pages workflow sets this to
+  // "/harmonAIze/" so asset URLs resolve under the project sub-path.
+  base: process.env.VITE_BASE ?? "/",
   plugins,
   resolve: {
     alias: {
