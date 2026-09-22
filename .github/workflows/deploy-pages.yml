@@ -32,10 +32,7 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      # Reported, not enforced — the repo carries an unwired harmonization
-      # pipeline that does not typecheck clean yet.
       - name: Typecheck
-        continue-on-error: true
         run: pnpm exec tsc --noEmit
 
       - name: Build client
